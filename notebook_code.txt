@@ -1,0 +1,785 @@
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from pathlib import Path
+import warnings
+
+from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans, AgglomerativeClustering, DBSCAN
+from sklearn.metrics import silhouette_score
+
+pd.set_option("display.max_columns", None)
+pd.set_option("display.max_rows", 10)
+warnings.filterwarnings("ignore")
+
+# === CELL ===
+
+CANDIDATE_PATHS = [
+    "/content/drive/MyDrive/dataset/proyekAkhir/dpmdes-idm_jml_kejadian_bencana_banjir__des_kel_data.csv",
+    "dpmdes-idm_jml_kejadian_bencana_banjir__des_kel_data.csv",
+]
+
+FILE_PATH = None
+for p in CANDIDATE_PATHS:
+    if Path(p).exists():
+        FILE_PATH = p
+        break
+
+if FILE_PATH is None:
+    raise FileNotFoundError(
+        "File CSV belum ditemukan. Ubah CANDIDATE_PATHS sesuai lokasi dataset kamu."
+    )
+
+print("Dataset ditemukan di:", FILE_PATH)
+df = pd.read_csv(FILE_PATH)
+df.head()
+
+# === CELL ===
+
+print("Shape data:", df.shape)
+print("Jumlah kolom:", len(df.columns))
+print("Daftar kolom:")
+print(df.columns.tolist())
+
+display(df.head())
+df.info()
+
+# === CELL ===
+
+print("Jumlah data duplikat:", df.duplicated().sum())
+
+missing = df.isna().sum().sort_values(ascending=False)
+missing_pct = (df.isna().mean() * 100).sort_values(ascending=False)
+missing_table = pd.DataFrame({
+    "missing_count": missing,
+    "missing_pct": missing_pct
+})
+
+print("Tabel missing value:")
+display(missing_table)
+
+# === CELL ===
+
+eda_df = df.copy()
+
+numeric_cols = [
+    "kode_provinsi",
+    "bps_kode_kabupaten_kota",
+    "bps_kode_kecamatan",
+    "bps_kode_desa_kelurahan",
+    "jumlah_kejadian",
+    "tahun",
+    "id",
+]
+
+for col in numeric_cols:
+    if col in eda_df.columns:
+        eda_df[col] = pd.to_numeric(eda_df[col], errors="coerce")
+
+if "jumlah_kejadian" in eda_df.columns:
+    eda_df["jumlah_kejadian"] = eda_df["jumlah_kejadian"].fillna(0)
+
+print("Tipe data setelah penyesuaian:")
+display(eda_df.dtypes)
+
+# === CELL ===
+
+eda_df.describe(include="all").T
+
+# === CELL ===
+
+# Visualisasi Distribusi
+plt.figure(figsize=(8, 4))
+plt.hist(eda_df["jumlah_kejadian"].dropna(), bins=30)
+plt.title("Distribusi Jumlah Kejadian Banjir")
+plt.xlabel("Jumlah Kejadian")
+plt.ylabel("Frekuensi")
+plt.tight_layout()
+plt.show()
+
+# === CELL ===
+
+# Visualisasi Distibusi
+year_counts = eda_df["tahun"].value_counts().sort_index()
+
+display(year_counts)
+
+plt.figure(figsize=(8, 4))
+plt.bar(year_counts.index.astype(int), year_counts.values)
+plt.title("Distribusi Jumlah Data per Tahun")
+plt.xlabel("Tahun")
+plt.ylabel("Jumlah Baris")
+plt.tight_layout()
+plt.show()
+
+# === CELL ===
+
+top_kab = (
+    eda_df.groupby("bps_nama_kabupaten_kota", as_index=False)["jumlah_kejadian"]
+    .sum()
+    .sort_values("jumlah_kejadian", ascending=False)
+    .head(10)
+)
+
+display(top_kab)
+
+plt.figure(figsize=(10, 5))
+plt.bar(top_kab["bps_nama_kabupaten_kota"], top_kab["jumlah_kejadian"])
+plt.title("Top 10 Kabupaten/Kota dengan Total Kejadian Banjir Tertinggi")
+plt.xlabel("Kabupaten/Kota")
+plt.ylabel("Total Kejadian")
+plt.xticks(rotation=75, ha="right")
+plt.tight_layout()
+plt.show()
+
+# === CELL ===
+
+missing_nonzero = missing_table[missing_table["missing_count"] > 0]
+print("Kolom yang memiliki missing value:")
+display(missing_nonzero if len(missing_nonzero) > 0 else missing_table.head(0))
+
+# === CELL ===
+
+num_df = eda_df.select_dtypes(include=[np.number]).copy()
+corr = num_df.corr(numeric_only=True)
+
+display(corr)
+
+plt.figure(figsize=(10, 6))
+plt.imshow(corr, aspect="auto")
+plt.xticks(range(len(corr.columns)), corr.columns, rotation=75, ha="right")
+plt.yticks(range(len(corr.columns)), corr.columns)
+plt.title("Korelasi Antar Variabel Numerik")
+plt.colorbar()
+plt.tight_layout()
+plt.show()
+
+# === CELL ===
+
+insight_1 = (
+    "1. Distribusi jumlah kejadian banjir cenderung terkonsentrasi pada nilai rendah, "
+    "yang menunjukkan bahwa sebagian besar observasi memiliki jumlah kejadian kecil."
+)
+
+insight_2 = (
+    "2. Pemeriksaan missing value menunjukkan kualitas data relatif baik pada kolom utama, "
+    "sehingga dataset layak digunakan untuk analisis lanjutan."
+)
+
+insight_3 = (
+    "3. Total kejadian banjir tidak tersebar merata antar wilayah; terdapat kabupaten/kota tertentu "
+    "yang memiliki akumulasi kejadian lebih tinggi dibanding wilayah lain."
+)
+
+insight_4 = (
+    "4. Distribusi data per tahun dapat digunakan untuk melihat kestabilan ketersediaan data "
+    "dan potensi analisis tren sederhana berdasarkan waktu."
+)
+
+for text in [insight_1, insight_2, insight_3, insight_4]:
+    print(text)
+
+# === CELL ===
+
+# salin dataset agar data mentah tetap aman
+clean_df = df.copy()
+
+# cek duplikat
+print("Jumlah baris duplikat:", clean_df.duplicated().sum())
+
+# cek missing value
+missing = clean_df.isna().sum().sort_values(ascending=False)
+missing_pct = (clean_df.isna().mean() * 100).sort_values(ascending=False)
+missing_table = pd.DataFrame({
+    "missing_count": missing,
+    "missing_pct": missing_pct
+})
+display(missing_table)
+
+
+# === CELL ===
+
+# ubah kolom numerik ke tipe yang sesuai
+numeric_cols = [
+    "kode_provinsi",
+    "bps_kode_kabupaten_kota",
+    "bps_kode_kecamatan",
+    "bps_kode_desa_kelurahan",
+    "jumlah_kejadian",
+    "tahun",
+    "id",
+]
+
+for col in numeric_cols:
+    clean_df[col] = pd.to_numeric(clean_df[col], errors="coerce")
+
+# rapikan kolom teks: trim spasi dan ubah ke huruf besar agar konsisten
+text_cols = clean_df.select_dtypes(include="object").columns
+for col in text_cols:
+    clean_df[col] = clean_df[col].astype(str).str.strip().str.upper()
+
+# penanganan missing numerik
+clean_df["jumlah_kejadian"] = clean_df["jumlah_kejadian"].fillna(0)
+clean_df["tahun"] = clean_df["tahun"].fillna(clean_df["tahun"].median())
+
+# validasi nilai negatif pada jumlah kejadian
+neg_count = (clean_df["jumlah_kejadian"] < 0).sum()
+print("Jumlah nilai negatif pada jumlah_kejadian:", int(neg_count))
+clean_df.loc[clean_df["jumlah_kejadian"] < 0, "jumlah_kejadian"] = 0
+
+print("Shape setelah cleaning dasar:", clean_df.shape)
+clean_df.head()
+
+
+# === CELL ===
+
+# fitur indikator dasar
+clean_df["pernah_banjir"] = (clean_df["jumlah_kejadian"] > 0).astype(int)
+
+# kategorisasi intensitas kejadian pada level desa/kelurahan
+clean_df["kategori_kejadian"] = pd.cut(
+    clean_df["jumlah_kejadian"],
+    bins=[-0.1, 0, 2, 5, clean_df["jumlah_kejadian"].max()],
+    labels=["TIDAK ADA", "RENDAH", "SEDANG", "TINGGI"]
+)
+
+clean_df[["jumlah_kejadian", "pernah_banjir", "kategori_kejadian"]].head()
+
+
+# === CELL ===
+
+# agregasi ke level kecamatan per tahun
+kec_tahun = (
+    clean_df.groupby(
+        [
+            "bps_nama_kabupaten_kota",
+            "bps_nama_kecamatan",
+            "tahun"
+        ],
+        as_index=False
+    )
+    .agg(
+        total_kejadian_tahun=("jumlah_kejadian", "sum"),
+        desa_terdampak_tahun=("pernah_banjir", "sum"),
+        jumlah_desa_tercatat=("bps_nama_desa_kelurahan", "nunique")
+    )
+)
+
+kec_tahun.head()
+
+
+# === CELL ===
+
+# agregasi final level kecamatan untuk data modeling
+fitur_kecamatan = (
+    kec_tahun.groupby(
+        ["bps_nama_kabupaten_kota", "bps_nama_kecamatan"],
+        as_index=False
+    )
+    .agg(
+        total_kejadian_2019_2024=("total_kejadian_tahun", "sum"),
+        rata_rata_kejadian_tahunan=("total_kejadian_tahun", "mean"),
+        maksimum_kejadian_1_tahun=("total_kejadian_tahun", "max"),
+        minimum_kejadian_1_tahun=("total_kejadian_tahun", "min"),
+        std_kejadian_tahunan=("total_kejadian_tahun", "std"),
+        total_desa_terdampak=("desa_terdampak_tahun", "sum"),
+        rata_rata_desa_terdampak=("desa_terdampak_tahun", "mean"),
+        jumlah_tahun_tercatat=("tahun", "nunique"),
+        rata_rata_jumlah_desa=("jumlah_desa_tercatat", "mean")
+    )
+)
+
+# isi std yang kosong dengan 0 (biasanya terjadi jika observasi hanya 1 nilai unik)
+fitur_kecamatan["std_kejadian_tahunan"] = fitur_kecamatan["std_kejadian_tahunan"].fillna(0)
+
+# fitur turunan tambahan
+fitur_kecamatan["range_kejadian_tahunan"] = (
+    fitur_kecamatan["maksimum_kejadian_1_tahun"] - fitur_kecamatan["minimum_kejadian_1_tahun"]
+)
+
+fitur_kecamatan["proporsi_desa_terdampak"] = (
+    fitur_kecamatan["rata_rata_desa_terdampak"] / fitur_kecamatan["rata_rata_jumlah_desa"]
+)
+
+fitur_kecamatan["intensitas_banjir"] = (
+    fitur_kecamatan["total_kejadian_2019_2024"] / fitur_kecamatan["jumlah_tahun_tercatat"]
+)
+
+fitur_kecamatan.head()
+
+
+# === CELL ===
+
+kamus_fitur = pd.DataFrame({
+    "fitur": [
+        "total_kejadian_2019_2024",
+        "rata_rata_kejadian_tahunan",
+        "maksimum_kejadian_1_tahun",
+        "std_kejadian_tahunan",
+        "range_kejadian_tahunan",
+        "total_desa_terdampak",
+        "proporsi_desa_terdampak",
+        "intensitas_banjir",
+    ],
+    "penjelasan": [
+        "Total seluruh kejadian banjir per kecamatan selama periode data.",
+        "Rata-rata kejadian banjir per tahun pada tiap kecamatan.",
+        "Nilai kejadian tertinggi dalam satu tahun.",
+        "Menggambarkan kestabilan atau fluktuasi kejadian tiap tahun.",
+        "Selisih antara kejadian maksimum dan minimum per tahun.",
+        "Akumulasi desa/kelurahan yang terdampak banjir.",
+        "Rasio rata-rata desa terdampak terhadap total desa tercatat.",
+        "Ukuran intensitas banjir per tahun pada tiap kecamatan."
+    ]
+})
+
+display(kamus_fitur)
+
+
+# === CELL ===
+
+# Feature selection
+feature_cols = [
+    "total_kejadian_2019_2024",
+    "rata_rata_kejadian_tahunan",
+    "maksimum_kejadian_1_tahun",
+    "std_kejadian_tahunan",
+    "range_kejadian_tahunan",
+    "total_desa_terdampak",
+    "proporsi_desa_terdampak",
+    "intensitas_banjir",
+]
+
+final_dataset = fitur_kecamatan[[
+    "bps_nama_kabupaten_kota",
+    "bps_nama_kecamatan",
+    *feature_cols
+]].copy()
+
+print("Shape dataset final:", final_dataset.shape)
+display(final_dataset.head())
+
+
+# === CELL ===
+
+# cek missing value dataset final
+print("Missing value dataset final:")
+display(final_dataset.isna().sum())
+
+# statistik deskriptif fitur numerik
+final_dataset[feature_cols].describe().T
+
+
+# === CELL ===
+
+# korelasi antar fitur untuk melihat apakah fitur cukup informatif
+corr = final_dataset[feature_cols].corr()
+display(corr)
+
+plt.figure(figsize=(10, 6))
+plt.imshow(corr, aspect="auto")
+plt.xticks(range(len(feature_cols)), feature_cols, rotation=75, ha="right")
+plt.yticks(range(len(feature_cols)), feature_cols)
+plt.title("Korelasi Fitur Dataset Final")
+plt.colorbar()
+plt.tight_layout()
+plt.show()
+
+
+# === CELL ===
+
+OUTPUT_PATH = "dataset_final_banjir.csv"
+final_dataset.to_csv(OUTPUT_PATH, index=False)
+print(f"Dataset final berhasil disimpan ke: {OUTPUT_PATH}")
+
+
+# === CELL ===
+
+from google.colab import files
+files.download("dataset_final_banjir.csv")
+
+# === CELL ===
+
+# Gunakan dataset final hasil Tahap 3
+candidate_files = [
+    "dataset_final_banjir.csv"
+]
+
+dataset_path = None
+for file_name in candidate_files:
+    if Path(file_name).exists():
+        dataset_path = file_name
+        break
+
+if dataset_path is None:
+    raise FileNotFoundError(
+        "Dataset final tidak ditemukan. Jalankan Tahap 3 terlebih dahulu atau pastikan file CSV ada di folder kerja."
+    )
+
+df_model = pd.read_csv(dataset_path)
+print("Dataset yang dipakai:", dataset_path)
+df_model.head()
+
+# === CELL ===
+
+print("Shape dataset:", df.shape)
+df.info()
+
+# === CELL ===
+
+feature_cols = ["total_kejadian_2019_2024", "rata_rata_kejadian_tahunan", "maksimum_kejadian_1_tahun"]
+X_raw = df_model[feature_cols].copy()
+
+X_raw.head()
+
+# === CELL ===
+
+scaler = StandardScaler()
+X = scaler.fit_transform(X_raw)
+
+pd.DataFrame(X, columns=feature_cols).head()
+
+# === CELL ===
+
+inertia = []
+k_values = range(2, 10)
+
+for k in k_values:
+    model = KMeans(n_clusters=k, random_state=42, n_init=10)
+    model.fit(X)
+    inertia.append(model.inertia_)
+
+plt.figure(figsize=(8, 5))
+plt.plot(list(k_values), inertia, marker="o")
+plt.title("Elbow Method untuk Menentukan Jumlah Cluster")
+plt.xlabel("Jumlah Cluster (k)")
+plt.ylabel("Inertia")
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# === CELL ===
+
+kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
+df_model["cluster_kmeans"] = kmeans.fit_predict(X)
+
+score_kmeans = silhouette_score(X, df_model["cluster_kmeans"])
+
+print("Silhouette Score K-Means:", round(score_kmeans, 4))
+df.head()
+
+# === CELL ===
+
+kmeans_summary = df_model.groupby("cluster_kmeans")[feature_cols].mean().round(2)
+kmeans_count = df_model["cluster_kmeans"].value_counts().sort_index()
+
+print("Jumlah anggota tiap cluster (K-Means):")
+print(kmeans_count)
+print("\nRata-rata fitur tiap cluster (K-Means):")
+display(kmeans_summary)
+
+# === CELL ===
+
+# label cluster K-Means dari angka menjadi Rendah / Sedang / Tinggi
+urutan_kmeans = kmeans_summary["total_kejadian_2019_2024"].sort_values().index.tolist()
+label_berurutan = ["Rendah", "Sedang", "Tinggi"]
+
+label_map_kmeans = {cluster_id: label_berurutan[i] for i, cluster_id in enumerate(urutan_kmeans)}
+df_model["label_kmeans"] = df_model["cluster_kmeans"].map(label_map_kmeans)
+
+print("Mapping label K-Means:")
+print(label_map_kmeans)
+
+df_model[[
+    "bps_nama_kabupaten_kota",
+    "bps_nama_kecamatan",
+    "cluster_kmeans",
+    "label_kmeans"
+]].head(10)
+
+# === CELL ===
+
+agg = AgglomerativeClustering(n_clusters=3)
+df_model["cluster_agg"] = agg.fit_predict(X)
+
+score_agg = silhouette_score(X, df_model["cluster_agg"])
+
+print("Silhouette Score Agglomerative:", round(score_agg, 4))
+df_model.head()
+
+# === CELL ===
+
+agg_summary = df_model.groupby("cluster_agg")[feature_cols].mean().round(2)
+agg_count = df_model["cluster_agg"].value_counts().sort_index()
+
+print("Jumlah anggota tiap cluster (Agglomerative):")
+print(agg_count)
+print("\nRata-rata fitur tiap cluster (Agglomerative):")
+display(agg_summary)
+
+# === CELL ===
+
+# label cluster Agglomerative dari angka menjadi Rendah / Sedang / Tinggi
+urutan_agg = agg_summary["total_kejadian_2019_2024"].sort_values().index.tolist()
+label_map_agg = {cluster_id: label_berurutan[i] for i, cluster_id in enumerate(urutan_agg)}
+df_model["label_agg"] = df_model["cluster_agg"].map(label_map_agg)
+
+print("Mapping label Agglomerative:")
+print(label_map_agg)
+
+df_model[[
+    "bps_nama_kabupaten_kota",
+    "bps_nama_kecamatan",
+    "cluster_agg",
+    "label_agg"
+]].head(10)
+
+# === CELL ===
+
+dbscan_candidates = []
+
+for eps in np.arange(0.20, 1.05, 0.05):
+    for min_samples in [3, 4, 5, 6, 8]:
+        model = DBSCAN(eps=float(np.round(eps, 2)), min_samples=min_samples)
+        labels = model.fit_predict(X)
+
+        n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+        n_noise = int((labels == -1).sum())
+        mask = labels != -1
+
+        if n_clusters >= 2 and mask.sum() > n_clusters:
+            sil = silhouette_score(X[mask], labels[mask])
+            dbscan_candidates.append({
+                "eps": float(np.round(eps, 2)),
+                "min_samples": min_samples,
+                "n_clusters": n_clusters,
+                "n_noise": n_noise,
+                "silhouette_score": sil
+            })
+
+dbscan_tuning = pd.DataFrame(dbscan_candidates).sort_values(
+    ["silhouette_score", "n_noise"],
+    ascending=[False, True]
+).reset_index(drop=True)
+
+if dbscan_tuning.empty:
+    raise ValueError("DBSCAN tidak menemukan kombinasi parameter yang menghasilkan minimal 2 cluster yang valid.")
+
+display(dbscan_tuning.head(10))
+
+# === CELL ===
+
+best_dbscan = dbscan_tuning.iloc[0]
+best_eps = float(best_dbscan["eps"])
+best_min_samples = int(best_dbscan["min_samples"])
+
+dbscan = DBSCAN(eps=best_eps, min_samples=best_min_samples)
+df_model["cluster_dbscan"] = dbscan.fit_predict(X)
+
+mask_dbscan = df_model["cluster_dbscan"] != -1
+n_clusters_dbscan = df_model["cluster_dbscan"].nunique() - (1 if -1 in df_model["cluster_dbscan"].unique() else 0)
+noise_count = int((df_model["cluster_dbscan"] == -1).sum())
+
+if mask_dbscan.sum() > n_clusters_dbscan and n_clusters_dbscan >= 2:
+    score_dbscan = silhouette_score(X[mask_dbscan], df_model.loc[mask_dbscan, "cluster_dbscan"])
+else:
+    score_dbscan = np.nan
+
+print(f"Parameter DBSCAN terbaik: eps={best_eps}, min_samples={best_min_samples}")
+print(f"Jumlah cluster DBSCAN (tanpa noise): {n_clusters_dbscan}")
+print(f"Jumlah data noise / outlier: {noise_count}")
+print("Silhouette Score DBSCAN:", round(score_dbscan, 4) if pd.notna(score_dbscan) else "Tidak tersedia")
+
+df_model.head()
+
+# === CELL ===
+
+# Hasil training
+dbscan_count = df_model["cluster_dbscan"].value_counts().sort_index()
+dbscan_summary = df_model.loc[df_model["cluster_dbscan"] != -1].groupby("cluster_dbscan")[feature_cols].mean().round(2)
+
+print("Jumlah anggota tiap cluster (DBSCAN):")
+print(dbscan_count)
+
+print("\nRata-rata fitur tiap cluster (DBSCAN, tanpa noise):")
+display(dbscan_summary)
+
+# === CELL ===
+
+# Mapping label DBSCAN
+if not dbscan_summary.empty and len(dbscan_summary.index) >= 2:
+    urutan_dbscan = dbscan_summary["total_kejadian_2019_2024"].sort_values().index.tolist()
+    level_names = ["Rendah", "Sedang", "Tinggi", "Sangat Tinggi"]
+    label_map_dbscan = {cluster_id: level_names[i] for i, cluster_id in enumerate(urutan_dbscan)}
+    df_model["label_dbscan"] = df_model["cluster_dbscan"].map(label_map_dbscan)
+    df_model.loc[df_model["cluster_dbscan"] == -1, "label_dbscan"] = "Noise/Outlier"
+else:
+    label_map_dbscan = {}
+    df_model["label_dbscan"] = np.where(df_model["cluster_dbscan"] == -1, "Noise/Outlier", "Cluster")
+
+print("Mapping label DBSCAN:")
+print(label_map_dbscan)
+
+df_model[[
+    "bps_nama_kabupaten_kota",
+    "bps_nama_kecamatan",
+    "cluster_dbscan",
+    "label_dbscan"
+]].head(20)
+
+# === CELL ===
+
+# Evalusi dn perbandingan
+comparison = pd.DataFrame({
+    "Algoritma": ["K-Means", "Agglomerative", "DBSCAN"],
+    "Silhouette Score": [score_kmeans, score_agg, score_dbscan],
+    "Jumlah Cluster": [
+        df_model["cluster_kmeans"].nunique(),
+        df_model["cluster_agg"].nunique(),
+        n_clusters_dbscan
+    ],
+    "Jumlah Noise": [0, 0, noise_count]
+}).sort_values("Silhouette Score", ascending=False, na_position="last").reset_index(drop=True)
+
+comparison["Silhouette Score"] = comparison["Silhouette Score"].round(4)
+comparison
+
+# === CELL ===
+
+# Visualisasi K-Means
+plt.figure(figsize=(8, 5))
+plt.scatter(
+    df_model["total_kejadian_2019_2024"],
+    df_model["rata_rata_kejadian_tahunan"],
+    c=df_model["cluster_kmeans"]
+)
+plt.title("Visualisasi Cluster Wilayah Rawan Banjir - K-Means")
+plt.xlabel("Total Kejadian Banjir 2019-2024")
+plt.ylabel("Rata-rata Kejadian per Tahun")
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# === CELL ===
+
+# Visualisasi Agglomerative
+plt.figure(figsize=(8, 5))
+plt.scatter(
+    df_model["total_kejadian_2019_2024"],
+    df_model["rata_rata_kejadian_tahunan"],
+    c=df_model["cluster_agg"]
+)
+plt.title("Visualisasi Cluster Wilayah Rawan Banjir - Agglomerative")
+plt.xlabel("Total Kejadian Banjir 2019-2024")
+plt.ylabel("Rata-rata Kejadian per Tahun")
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# === CELL ===
+
+# Visualisasi DBSCAN
+plt.figure(figsize=(8, 5))
+plt.scatter(
+    df_model["total_kejadian_2019_2024"],
+    df_model["rata_rata_kejadian_tahunan"],
+    c=df_model["cluster_dbscan"]
+)
+plt.title("Visualisasi Cluster Wilayah Rawan Banjir - DBSCAN")
+plt.xlabel("Total Kejadian Banjir 2019-2024")
+plt.ylabel("Rata-rata Kejadian per Tahun")
+plt.grid(True, alpha=0.3)
+plt.show()
+
+# === CELL ===
+
+# Melihat model dan hasilnya
+hasil_cluster = df_model[[
+    "bps_nama_kabupaten_kota",
+    "bps_nama_kecamatan",
+    "total_kejadian_2019_2024",
+    "rata_rata_kejadian_tahunan",
+    "maksimum_kejadian_1_tahun",
+    "cluster_kmeans",
+    "label_kmeans",
+    "cluster_agg",
+    "label_agg",
+    "cluster_dbscan",
+    "label_dbscan"
+]].copy()
+
+hasil_cluster.head(10)
+
+# === CELL ===
+
+# Menyimpan hasil
+hasil_cluster.to_csv("hasil_cluster_banjir_uts.csv", index=False)
+print("File berhasil disimpan sebagai: hasil_cluster_banjir_uts.csv")
+
+# === CELL ===
+
+from google.colab import files
+files.download("hasil_cluster_banjir_uts.csv")
+
+# === CELL ===
+
+# Perbandiangn Model Terbaik
+best_model_name = comparison.iloc[0, 0]
+print("Model terbaik berdasarkan perbandingan saat ini:", best_model_name)
+comparison
+
+# === CELL ===
+
+# Jika gradio belum tersedia, jalankan instalasi berikut
+# !pip install -q gradio
+
+import gradio as gr
+
+# === CELL ===
+
+def clustering_kerawanan(nama_kecamatan, total_kejadian, rata_rata_tahunan, maksimum_1_tahun):
+
+    input_df = pd.DataFrame([[
+        total_kejadian,
+        rata_rata_tahunan,
+        maksimum_1_tahun
+    ]], columns=feature_cols)
+
+    input_scaled = scaler.transform(input_df)
+    pred_cluster = int(kmeans.predict(input_scaled)[0])
+    pred_label = label_map_kmeans[pred_cluster]
+
+    if pred_label == "Rendah":
+        keterangan = "Wilayah cenderung memiliki intensitas banjir rendah."
+    elif pred_label == "Sedang":
+        keterangan = "Wilayah memiliki tingkat kerawanan banjir menengah."
+    else:
+        keterangan = "Wilayah termasuk kategori rawan banjir tinggi dan perlu prioritas mitigasi."
+
+    return f"""
+### Hasil Clustering
+
+Nama Kecamatan : **{nama_kecamatan}**
+
+Cluster K-Means : **{pred_cluster}**
+
+Kategori Kerawanan : **{pred_label}**
+
+Penjelasan :
+{keterangan}
+"""
+
+demo = gr.Interface(
+    fn=clustering_kerawanan,
+    inputs=[
+        gr.Textbox(label="Nama Kecamatan"),
+        gr.Number(label="Total Kejadian Banjir 2019-2024"),
+        gr.Number(label="Rata-rata Kejadian per Tahun"),
+        gr.Number(label="Maksimum Kejadian dalam 1 Tahun"),
+    ],
+    outputs=gr.Markdown(label="Hasil Clustering"),
+    title="Aplikasi Clustering Tingkat Kerawanan Banjir Kecamatan",
+    description="Masukkan tiga fitur utama untuk melihat hasil clustering tingkat kerawanan banjir kecamatan menggunakan algoritma K-Means."
+)
+
+# === CELL ===
+
+# Jalankan aplikasi
+demo.launch(share=True)
