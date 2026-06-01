@@ -1080,17 +1080,7 @@ if not st.session_state.logged_in:
         st.markdown('<div class="metric-card" style="margin-top: 50px;">', unsafe_allow_html=True)
         st.markdown('<div class="metric-icon">🔮</div>', unsafe_allow_html=True)
         st.markdown('<h2 style="text-align: center; margin-bottom: 5px; color: #F3F4F6;">Smart City Portal</h2>', unsafe_allow_html=True)
-        st.markdown('<p style="text-align: center; color: #A78BFA; font-size: 14px; margin-bottom: 5px;">Clustering Bencana Banjir Jabar - UAS ML</p>', unsafe_allow_html=True)
-        st.markdown("""
-        <div style="text-align: center; margin-bottom: 25px; padding: 10px; background: rgba(124,58,237,0.1); border-radius: 10px; border: 1px solid #4F46E5;">
-            <p style="margin: 0; color: #C084FC; font-size: 13px; font-weight: 600; font-family: 'Outfit', sans-serif;">
-                Nurul Aeni Az-Zahra
-            </p>
-            <p style="margin: 2px 0 0 0; color: #9CA3AF; font-size: 12px;">
-                2307049D4 &nbsp;·&nbsp; SIKC 3B
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown('<p style="text-align: center; color: #A78BFA; font-size: 14px; margin-bottom: 25px;">Clustering Bencana Banjir Jabar - UAS ML</p>', unsafe_allow_html=True)
         
         username = st.text_input("Username", placeholder="Masukkan username admin")
         password = st.text_input("Password", type="password", placeholder="Masukkan sandi")
